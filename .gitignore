@@ -1,0 +1,4 @@
+# Project exclude paths
+/common/target/
+/match_maker_ms_v1/target/
+/poc_app/target/
