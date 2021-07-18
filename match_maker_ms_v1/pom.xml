@@ -14,6 +14,15 @@
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
+
+        <!--for spark structured streaming: start -->
+        <spark.version>2.4.3</spark.version>
+        <scala.version.major>2.11</scala.version.major>
+        <scala.version.minor>12</scala.version.minor>
+        <scala.version>${scala.version.major}.${scala.version.minor}</scala.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <java.version>1.8</java.version>
+        <!--for spark structured streaming: end -->
     </properties>
 
     <dependencies>
@@ -25,6 +34,7 @@
             <scope>compile</scope>
         </dependency>
         <!--use common module: end -->
+
 
         <!--added for spark structured streaming: start-->
         <dependency>
