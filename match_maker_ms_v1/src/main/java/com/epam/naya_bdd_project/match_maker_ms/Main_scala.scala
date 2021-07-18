@@ -12,15 +12,19 @@ import org.bson.Document
 object Main_scala {
   def main(args: Array[String]): Unit = {
 
+    //micro service
+    val ms_source_topic = "upsertedOffers";
+    val ms_source_event_schema = Encoders.product[Offer].schema
+    val ms_sink_topic = "newMatches";
+
+
     //config
     val config_mongo_db_uri = "mongodb://127.0.0.1/barter.";
     val config_hadoop_home_dir = "C:\\BigData\\hadoop-2.7.1"
     val config_spark_master = "local[*]";
     val config_kafka_bootstrap_servers = "localhost:9092";
-
-    //ms
-    val ms_source_topic = "upsertedOffers";
-    val ms_source_event_schema = Encoders.product[Offer].schema
+    val config_kafka_checkpoint_root =  "c:\\todel12\\"; //"hdfs://hdfs:8020/checkpoints/"
+    val config_kafka_fail_on_data_loss = "false"; //prod="true", dev="false"
 
 
 
@@ -28,7 +32,7 @@ object Main_scala {
     System.setProperty("hadoop.home.dir", config_hadoop_home_dir)
 
     //Create Spark Session
-    val spark = SparkSession.builder.appName("Kafka Source").master(config_spark_master).getOrCreate
+    val spark = SparkSession.builder.appName("match maker").master(config_spark_master).getOrCreate
 
 
     //read from mongo users (usng pipline)
@@ -39,12 +43,16 @@ object Main_scala {
     dbUsersDF.printSchema()
     dbUsersDF.show()
 
-
     //read from mongo offers (usng pipline)
     val offersRDD1 = MongoSpark.load(spark.sparkContext, ReadConfig(Map("uri" -> (config_mongo_db_uri + "offers"))))
     val offersSchema = Encoders.product[Offer].schema
     val offersRDD2 = offersRDD1.withPipeline(Seq(Document.parse("{ $match: { user_id : { $gt : 0 } } }")))
     val dbOffersDF  = offersRDD2.toDF(offersSchema)
+      .withColumnRenamed("offer_guid", "db_offer_guid")
+      .withColumnRenamed("user_id", "db_user_id")
+      .withColumnRenamed("give", "db_give")
+      .withColumnRenamed("take", "db_take")
+
     dbOffersDF.printSchema()
     dbOffersDF.show()
 
@@ -55,7 +63,7 @@ object Main_scala {
       .format("kafka")
       .option("kafka.bootstrap.servers", config_kafka_bootstrap_servers)
       .option("subscribe", ms_source_topic)
-      //.option("failOnDataLoss","false")
+      .option("failOnDataLoss",config_kafka_fail_on_data_loss)
       .load()
     initDF.printSchema()
 
@@ -73,19 +81,19 @@ object Main_scala {
 
 
 
-    //transform stream to joinedDF
+    //transform stream to joined1DS:  rlike
+    //stream_offer_guid|stream_user_id|stream_give|stream_take|db_offer_guid|db_user_id|db_give|db_take
     eventObjectsDF.createOrReplaceTempView("eventsView")
     dbOffersDF.createOrReplaceTempView("dbOffersView")
     dbUsersDF.createOrReplaceTempView("dbUsersView")
-
-    val join_query = "select * from eventsView e INNER JOIN dbOffersView o where rlike(stream_give,take) and rlike(give,stream_take)" //give and take come form db. stram_give,stream_take come from stream.
-    val joinedDS = spark.sql(join_query)
-
+    //stream_user_id|stream_give|stream_take
+    val join1_query = "select * from eventsView e INNER JOIN dbOffersView d where rlike(stream_give,db_take) and rlike(db_give,stream_take)"
+    val joined1DS = spark.sql(join1_query)
 
     /*
     //test: write to console
     try {
-      joinedDS
+      joined1DS
         .writeStream
         .outputMode("append")
         .format("console")
@@ -99,6 +107,74 @@ object Main_scala {
     } finally {
       spark.close()
     }
+    */
+
+    val joined2DS  =  joined1DS.join(dbUsersDF, joined1DS("stream_user_id") === dbUsersDF("user_id"), "leftouter")
+      .drop("user_id")
+      .withColumnRenamed("email", "stream_email")
+      .withColumnRenamed("fname", "stream_fname")
+      .withColumnRenamed("lname", "stream_lname")
+
+    //test: write to console
+    try {
+      joined2DS
+        .writeStream
+        .outputMode("append")
+        .format("console")
+        .option("truncate", false)
+        //.option("numRows", 3)
+        .start()
+        .awaitTermination()
+    }
+    catch {
+      case e: StreamingQueryException => e.printStackTrace()
+    } finally {
+      spark.close()
+    }
+
+
+
+
+/*
+    val joined2DS  =  joined1DS.join(dbUsersDF, Seq("user_id"), "leftouter")
+
+    //test: write to console
+    try {
+      joined2DS
+        .writeStream
+        .outputMode("append")
+        .format("console")
+        .option("truncate", false)
+        //.option("numRows", 3)
+        .start()
+        .awaitTermination()
+    }
+    catch {
+          case e: StreamingQueryException => e.printStackTrace()
+    } finally {
+          spark.close()
+    }
+*/
+
+    /*
+    //write result to kafka
+    val query = joined2DS.selectExpr("to_json(struct(*)) AS value")
+      .writeStream
+      .format("kafka")
+      .outputMode("append")
+      .option("kafka.bootstrap.servers", config_kafka_bootstrap_servers)
+      .option("topic", ms_sink_topic)
+      .option("checkpointLocation",  config_kafka_checkpoint_root + ms_sink_topic)
+      .start();
+    try {
+      query.awaitTermination();
+    }
+    catch {
+      case e: StreamingQueryException => e.printStackTrace()
+    } finally {
+      spark.close();
+    }
+
     */
 
   }
