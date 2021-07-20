@@ -90,62 +90,33 @@ object Main_scala {
     val join1_query = "select * from eventsView e INNER JOIN dbOffersView d where rlike(stream_give,db_take) and rlike(db_give,stream_take)"
     val joined1DS = spark.sql(join1_query)
 
-    /*
-    //test: write to console
-    try {
-      joined1DS
-        .writeStream
-        .outputMode("append")
-        .format("console")
-        .option("truncate", false)
-        //.option("numRows", 3)
-        .start()
-        .awaitTermination()
-    }
-    catch {
-      case e: StreamingQueryException => e.printStackTrace()
-    } finally {
-      spark.close()
-    }
-    */
 
+    //transform stream to joined2DS:  add stream user details
+    //|stream_offer_guid|stream_user_id|stream_give|stream_take||stream_email|stream_fname|stream_lname|db_offer_guid|db_user_id|db_give|db_take
     val joined2DS  =  joined1DS.join(dbUsersDF, joined1DS("stream_user_id") === dbUsersDF("user_id"), "leftouter")
       .drop("user_id")
       .withColumnRenamed("email", "stream_email")
       .withColumnRenamed("fname", "stream_fname")
       .withColumnRenamed("lname", "stream_lname")
 
+
+
+    //transform stream to joined2DS:  add db user details
+    val joined3DS  =  joined2DS.join(dbUsersDF, joined2DS("db_user_id") === dbUsersDF("user_id"), "leftouter")
+      .drop("user_id")
+      .withColumnRenamed("email", "db_email")
+      .withColumnRenamed("fname", "db_fname")
+      .withColumnRenamed("lname", "db_lname")
+
+
+    /*
     //test: write to console
     try {
-      joined2DS
+      joined3DS
         .writeStream
         .outputMode("append")
         .format("console")
         .option("truncate", false)
-        //.option("numRows", 3)
-        .start()
-        .awaitTermination()
-    }
-    catch {
-      case e: StreamingQueryException => e.printStackTrace()
-    } finally {
-      spark.close()
-    }
-
-
-
-
-/*
-    val joined2DS  =  joined1DS.join(dbUsersDF, Seq("user_id"), "leftouter")
-
-    //test: write to console
-    try {
-      joined2DS
-        .writeStream
-        .outputMode("append")
-        .format("console")
-        .option("truncate", false)
-        //.option("numRows", 3)
         .start()
         .awaitTermination()
     }
@@ -154,11 +125,11 @@ object Main_scala {
     } finally {
           spark.close()
     }
-*/
+    */
 
-    /*
+
     //write result to kafka
-    val query = joined2DS.selectExpr("to_json(struct(*)) AS value")
+    val query = joined3DS.selectExpr("to_json(struct(*)) AS value")
       .writeStream
       .format("kafka")
       .outputMode("append")
@@ -174,8 +145,6 @@ object Main_scala {
     } finally {
       spark.close();
     }
-
-    */
 
   }
 

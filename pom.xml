@@ -12,6 +12,7 @@
         <module>common</module>
         <module>poc_app</module>
         <module>match_maker_ms_v1</module>
+        <module>match_archivator_ms_v1</module>
     </modules>
 
     <properties>
