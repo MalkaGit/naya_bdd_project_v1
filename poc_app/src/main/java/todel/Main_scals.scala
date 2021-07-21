@@ -47,7 +47,7 @@ object Main_scala_v2 {
 
 
     //batchDF
-    mongoDF
+    joinedDS
       .selectExpr("to_json(struct(*)) AS value")
       .write
       .format("kafka") //write stream to kafka (topic)
