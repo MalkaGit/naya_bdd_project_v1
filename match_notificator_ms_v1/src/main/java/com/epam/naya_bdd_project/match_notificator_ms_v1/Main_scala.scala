@@ -16,55 +16,54 @@ object Main_scala {
 
   //config
   //private val config_mongo_db_uri = "mongodb://127.0.0.1/barter.";
-  private val config_hadoop_home_dir = "C:\\BigData\\hadoop-2.7.1"
-  private val config_spark_master = "local[*]";
-  private val config_kafka_bootstrap_servers = "localhost:9092";
-  private val config_kafka_checkpoint_root =  "c:\\todel16\\"; //"hdfs://hdfs:8020/checkpoints/"
-  private val config_kafka_fail_on_data_loss = "false"; //prod="true", dev="false"
-  //private val confing_hdfs_root = "hdfs://localhost:8020/"
+  private val configHadoopHomeDir = "C:\\BigData\\hadoop-2.7.1"
+  private val configSparkMaster = "local[*]";
+  private val configKafkaBootstrapServers = "localhost:9092";
+  private val configKafkaCheckpointRoot =  "c:\\todel16\\"; //"hdfs://hdfs:8020/checkpoints/"
+  private val configKafkaFailOnDataLoss = "false"; //prod="true", dev="false"
+  //private val confingHdfsRoot = "hdfs://localhost:8020/"
 
 
   //micro service
-  private val ms_source_topic = "newMatches";
-  private val ms_source_event_schema = Encoders.product[Match].schema
-  private val ms_target_sender_email = "regine.issan@gmail.com";
-  private val ms_target_sender_pssword = "Pumiki14";
+  private val msSourceTopic = "newMatches";
+  private val msSourceEventSchema = Encoders.product[Match].schema
+  private val msTargetSenderEmail = "regine.issan@gmail.com";
+  private val msTargetSenderPssword = "Pumiki14";
 
 
 
-  //MailSenderUtil.send("regine.issan.jobs@gmail.com","regine.issan@gmail.com","Pumiki14","s1","b1");
   def processMicroBatch(batchDF: DataFrame, batchId: Long) :Unit = {
 
 
-    userLog.info("matc notificator: process micro batch was called with " + batchDF.count() + "rows");
+    userLog.info("matc notificator: process micro batch was called with " + batchDF.count() + " rows");
 
     //streamDF
     val eventObjectsDF = batchDF;
     eventObjectsDF.printSchema()
 
     eventObjectsDF.foreach(r=> {
-      val stream_fname= r.getAs[String]("stream_fname")
-      val stream_lname = r.getAs[String]("stream_lname")
-      val stream_email = r.getAs[String]("stream_email")
-      val stream_give= r.getAs[String]("stream_give")
-      val stream_take= r.getAs[String]("stream_take")
-      val db_fname= r.getAs[String]("db_fname")
-      val db_lname= r.getAs[String]("db_lname")
-      val db_email= r.getAs[String]("db_email")
-      val db_give = r.getAs[String]("db_give")
-      val db_take= r.getAs[String]("db_take")
+      val streamFname= r.getAs[String]("streamFname")
+      val streamLname = r.getAs[String]("streamLname")
+      val streamEmail = r.getAs[String]("streamEmail")
+      val streamGive= r.getAs[String]("streamGive")
+      val streamTake= r.getAs[String]("streamTake")
+      val dbFname= r.getAs[String]("dbFname")
+      val dbLname= r.getAs[String]("dbLname")
+      val dbEmail= r.getAs[String]("dbEmail")
+      val dbGive = r.getAs[String]("dbGive")
+      val dbTake= r.getAs[String]("dbTake")
 
 
 
       //send mail to the stream user
-      val text_message_to_stram_user = String.format("Hello %s %s, /r/n the offer you just proposed was matched with %s %s ! you proposed %s for %s. Your match propose %s for %s", stream_fname, stream_lname, db_fname, db_lname, stream_give, stream_take, db_give, db_take)
-      MailSenderUtil.send(stream_email,ms_target_sender_email,ms_target_sender_pssword,"New match",text_message_to_stram_user)
+      val textMessageToStreamUser = String.format("Hello %s %s, the offer you just proposed was matched with %s %s ! you proposed %s for %s. Your match propose %s for %s", streamFname, streamLname, dbFname, dbLname, streamGive, streamTake, dbGive, dbTake)
+      MailSenderUtil.send(streamEmail,msTargetSenderEmail,msTargetSenderPssword,"New match",textMessageToStreamUser)
 
       //send mail to the fb user
-      val text_message_to_db_user = String.format("Hello %s %s, /r/n your offer was matched with %s %s ! you proposed %s for %s. Your match propose %s for %s", db_fname, db_lname, stream_fname, stream_lname, db_give, db_take, stream_give, stream_take)
-      MailSenderUtil.send(db_email,ms_target_sender_email,ms_target_sender_pssword,"New match",text_message_to_db_user)
+      val textMessageToDbUser = String.format("Hello %s %s,  %s %s matched an offer that matches your offer ! you proposed %s for %s. Your match propose %s for %s", dbFname, dbLname, streamFname, streamLname, dbGive, dbTake, streamGive, streamTake)
+      MailSenderUtil.send(dbEmail,msTargetSenderEmail,msTargetSenderPssword,"New match",textMessageToDbUser)
 
-      userLog.info(("sent email notification to " + stream_email))
+      userLog.info(("sent email notification to " + streamEmail + " and to " + dbEmail))
       //todo: error hadling - write to errors queue
 
     });
@@ -77,18 +76,18 @@ object Main_scala {
 
 
     //prevent exception of win utils
-    System.setProperty("hadoop.home.dir", config_hadoop_home_dir)
+    System.setProperty("hadoop.home.dir", configHadoopHomeDir)
 
     //Create Spark Session
-    val spark = SparkSession.builder.appName("match archivator").master(config_spark_master).getOrCreate
+    val spark = SparkSession.builder.appName("match archivator").master(configSparkMaster).getOrCreate
 
 
     //create input stream from kafka
     val initDF = spark.readStream
       .format("kafka")
-      .option("kafka.bootstrap.servers", config_kafka_bootstrap_servers)
-      .option("subscribe", ms_source_topic)
-      .option("failOnDataLoss",config_kafka_fail_on_data_loss)
+      .option("kafka.bootstrap.servers", configKafkaBootstrapServers)
+      .option("subscribe", msSourceTopic)
+      .option("failOnDataLoss",configKafkaFailOnDataLoss )
       .load()
     initDF.printSchema()
 
@@ -97,7 +96,7 @@ object Main_scala {
     //transform stream to eventObjectsDF
     val eventsJsonDF = initDF.selectExpr("CAST(value AS STRING)")
     val eventObjectsDF = eventsJsonDF
-      .select(from_json(col("value"), ms_source_event_schema).as("data"))
+      .select(from_json(col("value"), msSourceEventSchema).as("data"))
       .select("data.*")
 
     eventObjectsDF.printSchema()

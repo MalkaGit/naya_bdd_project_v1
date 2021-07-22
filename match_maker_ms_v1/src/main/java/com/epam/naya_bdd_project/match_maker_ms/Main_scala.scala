@@ -15,48 +15,48 @@ object Main_scala {
   private val userLog = Logger.getLogger("match_maker_ms")
 
   //micro service
-  private val ms_source_topic = "upsertedOffers";
-  private val ms_source_event_schema = Encoders.product[Offer].schema
-  private val ms_sink_topic = "newMatches";
+  private val msSourceTopic = "upsertedOffers";
+  private val msSourceEventSchema = Encoders.product[Offer].schema
+  private val msSinkTopic = "newMatches";
 
   //config
-  private val config_mongo_db_uri = "mongodb://127.0.0.1/barter.";
-  private val config_hadoop_home_dir = "C:\\BigData\\hadoop-2.7.1"
-  private val config_spark_master = "local[*]";
-  private val config_kafka_bootstrap_servers = "localhost:9092";
-  private val config_kafka_checkpoint_root =  "c:\\todel12\\"; //"hdfs://hdfs:8020/checkpoints/"
-  private val config_kafka_fail_on_data_loss = "false"; //prod="true", dev="false"
+  private val configMongoDbUri = "mongodb://127.0.0.1/barter.";
+  private val configHadoopHomeDir = "C:\\BigData\\hadoop-2.7.1"
+  private val configSparkMaster = "local[*]";
+  private val configKafkaBootstrapServers = "localhost:9092";
+  private val configKafkaCheckpointRoot =  "c:\\todel12\\"; //"hdfs://hdfs:8020/checkpoints/"
+  private val configKafkaFailOnDataLoss = "false"; //prod="true", dev="false"
 
   //Create Spark Session
-  val spark = SparkSession.builder.appName("match maker").master(config_spark_master).getOrCreate
+  val spark = SparkSession.builder.appName("match maker").master(configSparkMaster).getOrCreate
 
 
 
   def processMicroBatch(batchDF: DataFrame, batchId: Long) :Unit = {
 
-
-    userLog.info("mach maker: process micro batch was called with " + batchDF.count() + "rows");
+    userLog.info("match maker: process micro batch was called with " + batchDF.count() + " rows");
 
 
     //read from mongo users (usng pipline)
-    //todo: instead reading all, read my datemodified and update dataset in memeory
-    val usersRDD1 = MongoSpark.load(spark.sparkContext, ReadConfig(Map("uri" -> (config_mongo_db_uri + "users"))))
+    //todo: instead reading all, read only those that were updates since last micto batch  (alos linit one minth)
+    val usersRDD1 = MongoSpark.load(spark.sparkContext, ReadConfig(Map("uri" -> (configMongoDbUri + "users"))))
     val usersSchema = Encoders.product[User].schema
-    val usersRDD2 = usersRDD1.withPipeline(Seq(Document.parse("{ $match: { user_id : { $gt : 0 } } }")))
+    val usersRDD2 = usersRDD1.withPipeline(Seq(Document.parse("{ $match: { userId : { $gt : 0 } } }")))
     val dbUsersDF  = usersRDD2.toDF(usersSchema)
     dbUsersDF.printSchema()
     dbUsersDF.show()
 
 
     //read from mongo offers (usng pipline)
-    val offersRDD1 = MongoSpark.load(spark.sparkContext, ReadConfig(Map("uri" -> (config_mongo_db_uri + "offers"))))
+    //todo: instead reading all, read only those that were updates since last micto batch  (alos linit one minth)
+    val offersRDD1 = MongoSpark.load(spark.sparkContext, ReadConfig(Map("uri" -> (configMongoDbUri + "offers"))))
     val offersSchema = Encoders.product[Offer].schema
-    val offersRDD2 = offersRDD1.withPipeline(Seq(Document.parse("{ $match: { user_id : { $gt : 0 } } }")))
+    val offersRDD2 = offersRDD1.withPipeline(Seq(Document.parse("{ $match: { userId : { $gt : 0 } } }")))
     val dbOffersDF  = offersRDD2.toDF(offersSchema)
-      .withColumnRenamed("offer_guid", "db_offer_guid")
-      .withColumnRenamed("user_id", "db_user_id")
-      .withColumnRenamed("give", "db_give")
-      .withColumnRenamed("take", "db_take")
+      .withColumnRenamed("offerGuid", "dbOfferGuid")
+      .withColumnRenamed("userId", "dbUserId")
+      .withColumnRenamed("give", "dbGive")
+      .withColumnRenamed("take", "dbTake")
     dbOffersDF.printSchema()
     dbOffersDF.show()
 
@@ -69,32 +69,34 @@ object Main_scala {
 
     //transform stream to joined1DS:  rlike
     //stream_offer_guid|stream_user_id|stream_give|stream_take|db_offer_guid|db_user_id|db_give|db_take
-    eventObjectsDF.createOrReplaceGlobalTempView ("eventsView") //createOrReplaceTempView
+    //note: we cant use createOrReplaceTempView from foreachBatch. instead use createOrReplaceGlobalTempView and global_tmp
+    //      https://stackoverflow.com/questions/62709024/temporary-view-in-spark-structure-streaming
+    eventObjectsDF.createOrReplaceGlobalTempView ("eventsView")
     dbOffersDF.createOrReplaceGlobalTempView ("dbOffersView")
     dbUsersDF.createOrReplaceGlobalTempView ("dbUsersView")
 
 
     //stream_user_id|stream_give|stream_take
-    val join1_query = "select * from global_temp.eventsView e INNER JOIN global_temp.dbOffersView d where rlike(stream_give,db_take) and rlike(db_give,stream_take)"
+    val join1_query = "select * from global_temp.eventsView e INNER JOIN global_temp.dbOffersView d where rlike(streamGive,dbTake) and rlike(dbGive,streamTake)"
     val joined1DS = spark.sql(join1_query)
 
 
     //transform stream to joined2DS:  add stream user details
     //|stream_offer_guid|stream_user_id|stream_give|stream_take||stream_email|stream_fname|stream_lname|db_offer_guid|db_user_id|db_give|db_take
-    val joined2DS  =  joined1DS.join(dbUsersDF, joined1DS("stream_user_id") === dbUsersDF("user_id"), "leftouter")
-      .drop("user_id")
-      .withColumnRenamed("email", "stream_email")
-      .withColumnRenamed("fname", "stream_fname")
-      .withColumnRenamed("lname", "stream_lname")
+    val joined2DS  =  joined1DS.join(dbUsersDF, joined1DS("streamUserId") === dbUsersDF("userId"), "leftouter")
+      .drop("userId")
+      .withColumnRenamed("email", "streamEmail")
+      .withColumnRenamed("fname", "streamFname")
+      .withColumnRenamed("lname", "streamLname")
 
 
 
     //transform stream to joined2DS:  add db user details
-    val joined3DS  =  joined2DS.join(dbUsersDF, joined2DS("db_user_id") === dbUsersDF("user_id"), "leftouter")
+    val joined3DS  =  joined2DS.join(dbUsersDF, joined2DS("dbUserId") === dbUsersDF("userId"), "leftouter")
       .drop("user_id")
-      .withColumnRenamed("email", "db_email")
-      .withColumnRenamed("fname", "db_fname")
-      .withColumnRenamed("lname", "db_lname")
+      .withColumnRenamed("email", "dbEmail")
+      .withColumnRenamed("fname", "dbFname")
+      .withColumnRenamed("lname", "dbLname")
 
 
     //wrtte the join result to kafka (creates a small file)
@@ -103,9 +105,9 @@ object Main_scala {
       .write
       .format("kafka") //write stream to kafka (topic)
       //.outputMode("append")
-      .option("kafka.bootstrap.servers", config_kafka_bootstrap_servers)
-      .option("topic", ms_sink_topic) //the topic we want to write to
-      .option("checkpointLocation",  config_kafka_checkpoint_root + ms_sink_topic)
+      .option("kafka.bootstrap.servers", configKafkaBootstrapServers)
+      .option("topic", msSinkTopic) //the topic we want to write to
+      .option("checkpointLocation",  configKafkaCheckpointRoot + msSinkTopic)
       .mode("append")
       .save()
   }
@@ -115,14 +117,14 @@ object Main_scala {
   def main(args: Array[String]): Unit = {
 
     //prevent exception of win utils
-    System.setProperty("hadoop.home.dir", config_hadoop_home_dir)
+    System.setProperty("hadoop.home.dir", configHadoopHomeDir)
 
     //create input stream from kafka
     val initDF = spark.readStream
       .format("kafka")
-      .option("kafka.bootstrap.servers", config_kafka_bootstrap_servers)
-      .option("subscribe", ms_source_topic)
-      .option("failOnDataLoss",config_kafka_fail_on_data_loss)
+      .option("kafka.bootstrap.servers", configKafkaBootstrapServers)
+      .option("subscribe", msSourceTopic)
+      .option("failOnDataLoss",configKafkaFailOnDataLoss)
       .load()
     initDF.printSchema()
 
@@ -132,12 +134,12 @@ object Main_scala {
 
     //create objects DF from the json DF
     val eventObjectsDF = eventsJsonDF
-      .select(from_json(col("value"), ms_source_event_schema).as("data"))
+      .select(from_json(col("value"), msSourceEventSchema).as("data"))
       .select("data.*")
-      .withColumnRenamed("offer_guid", "stream_offer_guid")
-      .withColumnRenamed("user_id", "stream_user_id")
-      .withColumnRenamed("give", "stream_give")
-      .withColumnRenamed("take", "stream_take")
+      .withColumnRenamed("offerGuid", "streamOfferGuid")
+      .withColumnRenamed("userId", "streamUserId")
+      .withColumnRenamed("give", "streamGive")
+      .withColumnRenamed("take", "streamTake")
     eventObjectsDF.printSchema()
 
 
