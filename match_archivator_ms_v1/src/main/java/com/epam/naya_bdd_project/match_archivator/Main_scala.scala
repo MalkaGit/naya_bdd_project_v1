@@ -11,7 +11,7 @@ import org.apache.spark.sql.streaming.StreamingQueryException
 
 object Main_scala {
 
-  private val userLog = Logger.getLogger("match_archivator_ms")
+  private val userLog = Logger.getLogger(getClass().getName())
 
 
   def main(args: Array[String]): Unit = {

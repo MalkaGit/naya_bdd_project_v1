@@ -11,7 +11,7 @@ import org.bson.Document
 
 object Main_scala {
 
-  private val userLog = Logger.getLogger("match_notificator_ms")
+  private val userLog = Logger.getLogger(getClass().getName())
 
 
   //config

@@ -12,7 +12,7 @@ import org.bson.Document
 
 object Main_scala {
 
-  private val userLog = Logger.getLogger("match_maker_ms")
+  private val userLog = Logger.getLogger(getClass().getName())
 
   //micro service
   private val msSourceTopic = "upsertedOffers";
@@ -34,7 +34,7 @@ object Main_scala {
 
   def processMicroBatch(batchDF: DataFrame, batchId: Long) :Unit = {
 
-    userLog.info("match maker: process micro batch was called with " + batchDF.count() + " rows");
+    userLog.info("match maker: process micro batch was called with " + batchDF.count() + " rows !");
 
 
     //read from mongo users (usng pipline)
