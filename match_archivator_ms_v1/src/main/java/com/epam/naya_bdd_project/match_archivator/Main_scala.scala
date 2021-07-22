@@ -4,11 +4,16 @@ import com.epam.naya_bdd_project.common.models.Offer
 import com.epam.naya_bdd_project.common.utils.DummyUtil_scala
 import org.apache.spark.sql.{Encoders, SparkSession}
 import com.epam.naya_bdd_project.common.models.{Match, User}
+import org.apache.log4j.Logger
 import org.apache.spark.sql.functions.{col, from_json}
 import org.apache.spark.sql.streaming.StreamingQueryException
 
 
 object Main_scala {
+
+  private val userLog = Logger.getLogger("match_archivator_ms")
+
+
   def main(args: Array[String]): Unit = {
 
     //config
